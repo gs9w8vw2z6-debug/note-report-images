@@ -1,0 +1,59 @@
+name: Expand note images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'github_images*.zip'
+      - '.github/workflows/main.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: note-images
+
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract images
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          count = 0
+          for archive in Path('.').glob('github_images*.zip'):
+              with ZipFile(archive) as z:
+                  for item in z.infolist():
+                      name = Path(item.filename).name
+                      if item.is_dir() or name.startswith('.'):
+                          continue
+                      if not name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                          continue
+                      if '__MACOSX' in item.filename:
+                          continue
+                      data = z.read(item)
+                      target = Path(name)
+                      if target.exists() and target.read_bytes() != data:
+                          raise ValueError(f'Conflicting image: {name}')
+                      target.write_bytes(data)
+                      count += 1
+          if count == 0:
+              raise ValueError('No images found')
+          print(f'Processed {count} images')
+          PY
+
+      - name: Save images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Expand note report images"
+            git push origin HEAD:main
+          fi
